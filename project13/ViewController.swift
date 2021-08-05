@@ -9,12 +9,13 @@ import UIKit
 //TODO
 #warning("Make the Change Filter button change its title to show the name of the currently filter")
 #warning("Try more than 1 slider with different properties")
+
 class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     @IBOutlet weak var imageView: UIImageView!
     @IBOutlet weak var intensity: UISlider!
     
-    var currentImage: UIImage!
-    var context: CIContext!
+    var currentImage: UIImage?
+    lazy var context: CIContext = CIContext()
     var currentFilter: CIFilter!
     
     let loadingActivityIndicator: UIActivityIndicatorView = {
@@ -33,8 +34,6 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         return blurEffectView
     }()
     
-    
-    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -42,10 +41,8 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         title = newTitle
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(importPicture))
-        
-        
-        context = CIContext()
-        currentFilter = CIFilter(name: "CISepiaTone")
+
+        currentFilter = CIFilter(name: "CITwirlDistortion")
         
     }
     @objc private func importPicture() {
@@ -66,6 +63,7 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         guard let image = info[.editedImage] as? UIImage else { return }
         dismiss(animated: true)
         currentImage = image
+        guard let currentImage = currentImage else { return }
         
         let beginImage = CIImage(image: currentImage)
         currentFilter.setValue(beginImage, forKey: kCIInputImageKey)
@@ -76,30 +74,17 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     
     @IBAction func changeFilter(_ sender: UIButton) {
         let alertController = UIAlertController(title: "Choose filter", message: nil, preferredStyle: .actionSheet)
-        alertController.addAction(UIAlertAction(title: "CIBumpDistortion", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "CIGaussianBlur", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "CIPixellate", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "CISepiaTone", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "CITwirlDistortion", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "CIUnsharpMask", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "CIVignette", style: .default, handler: setFilter))
-        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        CIFilterName.allCases.forEach { filter in
+                  let action = UIAlertAction(title: filter.stringName, style: .default, handler: { _ in
+                      self.set(filter: filter)
+                  })
+                  alertController.addAction(action)
+              }
         if let popoverController = alertController.popoverPresentationController {
             popoverController.sourceView = sender
             popoverController.sourceRect = sender.bounds
         }
         present(alertController, animated: true)
-    }
-    
-    private func setFilter(action: UIAlertAction){
-        guard currentImage != nil else { return }
-        guard let actionTitle = action.title else { return }
-        
-        currentFilter = CIFilter(name: actionTitle)
-        
-        let beginImage = CIImage(image: currentImage)
-        currentFilter.setValue(beginImage, forKey: kCIInputIntensityKey)
-        applyProcessing()
     }
     
     @IBAction func save(_ sender: UIButton) {
@@ -117,6 +102,9 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     }
     
     private func applyProcessing() {
+        
+       guard let currentImage = currentImage else { return }
+        guard let currentFilter = currentFilter else { return }
         let inputKeys = currentFilter.inputKeys
         
         if inputKeys.contains(kCIInputIntensityKey){
@@ -140,17 +128,36 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         }
     }
     
-    
-    @objc private func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
-        if let error =  error {
-            let alertController = UIAlertController(title: "Save error", message: error.localizedDescription, preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: "Ok", style: .default))
-        } else {
-            let alertController = UIAlertController(title: "Saved!", message: "Your altered image has been saved to your photos.", preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: "Ok", style: .default))
-            present(alertController, animated: true)
-        }
+    private func set(filter: CIFilterName) {
+        currentFilter = CIFilter.make(filter)
+        applyProcessing()
     }
+}
+enum CIFilterName :String, CaseIterable {
+    case sepiaTone
+    case bumpDistortion
+    case gaussianBlur
+    case pixellate
+    case twirlDistortion
+    case unsharpMask
+    case vignette
+}
+extension CIFilterName {
+    var stringName: String {
+        "CI\(self.rawValue.capitalized)"
+    }
+}
+
+extension CIFilter {
+    static func make(_ filterName: CIFilterName) -> CIFilter? {
+        guard CIFilter.filterNames(inCategories: []).contains(filterName.stringName) else { return nil }
+        #warning("Problem: Here the return value is nil")
+        return CIFilter(name: filterName.stringName)
+    }
+}
+
+
+extension ViewController {
     @objc private func startLoadingAnimation() {
         
         blurEffectView.translatesAutoresizingMaskIntoConstraints = false
@@ -163,14 +170,25 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
             blurEffectView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             blurEffectView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             blurEffectView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
+
             loadingActivityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             loadingActivityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
     }
-    
     private func stopLoadingAnimation() {
         blurEffectView.removeFromSuperview()
         loadingActivityIndicator.removeFromSuperview()
     }
+    @objc private func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+        if let error =  error {
+            let alertController = UIAlertController(title: "Save error", message: error.localizedDescription, preferredStyle: .alert)
+            alertController.addAction(UIAlertAction(title: "Ok", style: .default))
+        } else {
+            let alertController = UIAlertController(title: "Saved!", message: "Your altered image has been saved to your photos.", preferredStyle: .alert)
+            alertController.addAction(UIAlertAction(title: "Ok", style: .default))
+            present(alertController, animated: true)
+        }
+    }
 }
+
+
