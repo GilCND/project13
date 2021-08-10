@@ -7,12 +7,12 @@
 import CoreImage
 import UIKit
 //TODO
-#warning("Make the Change Filter button change its title to show the name of the currently filter")
 #warning("Try more than 1 slider with different properties")
 
 class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     @IBOutlet weak var imageView: UIImageView!
-    @IBOutlet weak var intensity: UISlider!
+    @IBOutlet weak var changeIntensitySlider: UISlider!
+    @IBOutlet weak var changeFilterButton: UIButton!
     
     var currentImage: UIImage?
     lazy var context: CIContext = CIContext()
@@ -41,10 +41,10 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         title = newTitle
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(importPicture))
-
-        currentFilter = CIFilter(name: "CITwirlDistortion")
         
+        currentFilter = CIFilter.make(.twirlDistortion)
     }
+    
     @objc private func importPicture() {
         startLoadingAnimation()
         DispatchQueue.main.async { [weak self] in
@@ -59,17 +59,15 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     }
     
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        
+
         guard let image = info[.editedImage] as? UIImage else { return }
         dismiss(animated: true)
-        currentImage = image
-        guard let currentImage = currentImage else { return }
+        let beginImage = CIImage(image: image)
         
-        let beginImage = CIImage(image: currentImage)
         currentFilter.setValue(beginImage, forKey: kCIInputImageKey)
-        applyProcessing()
+        currentImage = image
+        applyProcessing(filterIntensity: 0.5)
         stopLoadingAnimation()
-        
     }
     
     @IBAction func changeFilter(_ sender: UIButton) {
@@ -78,8 +76,11 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
                   let action = UIAlertAction(title: filter.stringName, style: .default, handler: { _ in
                       self.set(filter: filter)
                   })
-                  alertController.addAction(action)
+            alertController.addAction(action)
               }
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .default, handler: { [weak alertController] _ in
+            alertController?.dismiss(animated: true)
+                }))
         if let popoverController = alertController.popoverPresentationController {
             popoverController.sourceView = sender
             popoverController.sourceRect = sender.bounds
@@ -91,30 +92,30 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         guard let image = imageView.image else {
             let alertController = UIAlertController(title: "Error", message: "Please selct an image", preferredStyle: .actionSheet)
             alertController.addAction(UIAlertAction(title: "Ok", style: .destructive))
+            
             present(alertController, animated: true)
             return
         }
         UIImageWriteToSavedPhotosAlbum(image, self, #selector(image(_:didFinishSavingWithError: contextInfo:)),nil)
     }
     
-    @IBAction func intensityChanger(_ sender: Any) {
-        applyProcessing()
+    @IBAction func changeFilterIntensity(_ sender: UISlider) {
+        applyProcessing(filterIntensity: sender.value)
     }
     
-    private func applyProcessing() {
+    private func applyProcessing(filterIntensity: Float) {
         
-       guard let currentImage = currentImage else { return }
-        guard let currentFilter = currentFilter else { return }
+       guard let currentImage = currentImage, let currentFilter = currentFilter else { return }
         let inputKeys = currentFilter.inputKeys
         
         if inputKeys.contains(kCIInputIntensityKey){
-            currentFilter.setValue(intensity.value, forKey: kCIInputIntensityKey)
+            currentFilter.setValue(filterIntensity, forKey: kCIInputIntensityKey)
         }
         if inputKeys.contains(kCIInputRadiusKey){
-            currentFilter.setValue(intensity.value * 200, forKey: kCIInputRadiusKey)
+            currentFilter.setValue(filterIntensity * 200, forKey: kCIInputRadiusKey)
         }
         if inputKeys.contains(kCIInputScaleKey) {
-            currentFilter.setValue(intensity.value * 10, forKey: kCIInputScaleKey)
+            currentFilter.setValue(filterIntensity * 10, forKey: kCIInputScaleKey)
         }
         if inputKeys.contains(kCIInputCenterKey) {
             currentFilter.setValue(CIVector(x: currentImage.size.width / 2, y: currentImage.size.height / 2), forKey: kCIInputCenterKey)
@@ -130,10 +131,11 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     
     private func set(filter: CIFilterName) {
         currentFilter = CIFilter.make(filter)
-        applyProcessing()
+        changeFilterButton.setTitle("\(filter)", for: .normal)
+        applyProcessing(filterIntensity: 0.5)
     }
 }
-enum CIFilterName :String, CaseIterable {
+enum CIFilterName: String, CaseIterable {
     case sepiaTone
     case bumpDistortion
     case gaussianBlur
@@ -144,14 +146,13 @@ enum CIFilterName :String, CaseIterable {
 }
 extension CIFilterName {
     var stringName: String {
-        "CI\(self.rawValue.capitalized)"
+        "CI\(self.rawValue.prefix(1).uppercased())\(self.rawValue.dropFirst())"
     }
 }
 
 extension CIFilter {
     static func make(_ filterName: CIFilterName) -> CIFilter? {
         guard CIFilter.filterNames(inCategories: []).contains(filterName.stringName) else { return nil }
-        #warning("Problem: Here the return value is nil")
         return CIFilter(name: filterName.stringName)
     }
 }
